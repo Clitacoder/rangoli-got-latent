@@ -344,6 +344,7 @@ function hostNet(code,cb){
   };open();
   return{send:(cid,m)=>{const c=routes[cid];if(c&&c.open)c.send(m)}};
 }
+
 function clientNet(code,cid,cb){
   if(LOCAL){
     const bc=new BroadcastChannel('rf-'+code);
@@ -351,13 +352,101 @@ function clientNet(code,cid,cb){
     setTimeout(()=>cb.onOpen(),0);
     return{send:m=>bc.postMessage({k:'c2h',m})};
   }
+
   if(typeof Peer==='undefined')return{send(){}};
-  let conn;const peer=new Peer();
-  const connect=()=>{conn=peer.connect('rf-'+code,{reliable:true});conn.on('open',()=>cb.onOpen());conn.on('data',cb.onMsg);conn.on('close',()=>setTimeout(connect,2500));conn.on('error',()=>{})};
-  peer.on('open',connect);
-  peer.on('disconnected',()=>{try{peer.reconnect()}catch(e){}});
-  peer.on('error',e=>{if(e.type==='peer-unavailable')setTimeout(connect,3000)});
-  return{send:m=>{if(conn&&conn.open)conn.send(m)}};
+
+  let conn=null,retryTimer=null,connectTimer=null;
+  let connecting=false,peerReady=false;
+
+  const peer=new Peer();
+
+  const retry=(delay=2000)=>{
+    if(retryTimer!==null)return;
+    retryTimer=setTimeout(()=>{
+      retryTimer=null;
+      connect();
+    },delay);
+  };
+
+  const connect=()=>{
+    if(!peerReady||connecting||(conn&&conn.open))return;
+
+    connecting=true;
+    let next;
+
+    try{
+      next=peer.connect('rf-'+code,{reliable:true});
+      conn=next;
+    }catch(e){
+      connecting=false;
+      retry(2500);
+      return;
+    }
+
+    let opened=false;
+
+    connectTimer=setTimeout(()=>{
+      if(!opened&&conn===next){
+        connecting=false;
+        conn=null;
+        try{next.close()}catch(e){}
+        retry(1500);
+      }
+    },10000);
+
+    next.on('open',()=>{
+      opened=true;
+      connecting=false;
+      clearTimeout(connectTimer);
+      cb.onOpen();
+    });
+
+    next.on('data',cb.onMsg);
+
+    next.on('close',()=>{
+      if(conn===next){
+        clearTimeout(connectTimer);
+        conn=null;
+        connecting=false;
+        retry(2000);
+      }
+    });
+
+    next.on('error',()=>{
+      if(conn===next){
+        clearTimeout(connectTimer);
+        conn=null;
+        connecting=false;
+        retry(2000);
+      }
+    });
+  };
+
+  peer.on('open',()=>{
+    peerReady=true;
+    connect();
+  });
+
+  peer.on('disconnected',()=>{
+    peerReady=false;
+    try{peer.reconnect()}catch(e){retry(3000)}
+  });
+
+  peer.on('error',e=>{
+    if(e.type==='peer-unavailable'){
+      retry(2500);
+    }else if(e.type==='network'||e.type==='socket-error'||e.type==='server-error'){
+      peerReady=false;
+      try{peer.reconnect()}catch(x){}
+      retry(3000);
+    }
+  });
+
+  return{
+    send:m=>{
+      if(conn&&conn.open)conn.send(m);
+    }
+  };
 }
 
 /* =====================================================================
