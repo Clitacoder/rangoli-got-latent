@@ -769,16 +769,46 @@ function initLanding(){
 
 if(role==='host'){
   const HOST_PASSWORD='Clita2026';
-  const entered=sessionStorage.getItem('rgl_host_unlocked')==='yes'
-    ? HOST_PASSWORD
-    : prompt('Enter Host Password');
-
-  if(entered===HOST_PASSWORD){
-    sessionStorage.setItem('rgl_host_unlocked','yes');
+  if(sessionStorage.getItem('rgl_host_unlocked')==='yes'){
     initHost();
   }else{
-    alert('Incorrect password. Host access denied.');
-    location.href=location.pathname;
+    document.body.innerHTML=`
+      <div style="display:flex;justify-content:center;align-items:center;
+      min-height:100vh;background:#111;color:white;font-family:Arial;">
+        <form id="hostLogin" style="text-align:center;">
+          <h2>Host Login</h2>
+          <input
+            id="hostPassword"
+            type="password"
+            placeholder="Enter Host Password"
+            required
+            style="padding:12px;font-size:16px;border-radius:8px;
+            border:1px solid #ccc;"
+          />
+          <br><br>
+          <button type="submit"
+            style="padding:12px 24px;border:0;border-radius:8px;
+            cursor:pointer;">
+            Unlock Host Dashboard
+          </button>
+          <p id="loginError" style="color:#ff7777;"></p>
+        </form>
+      </div>
+    `;
+
+    document.getElementById('hostLogin').addEventListener('submit',function(e){
+      e.preventDefault();
+
+      const entered=document.getElementById('hostPassword').value;
+
+      if(entered===HOST_PASSWORD){
+        sessionStorage.setItem('rgl_host_unlocked','yes');
+        location.reload();
+      }else{
+        document.getElementById('loginError').textContent=
+          'Incorrect password. Please try again.';
+      }
+    });
   }
 }
 else if((role==='team'||role==='jury')&&room)initClient();
